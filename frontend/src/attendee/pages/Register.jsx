@@ -3,6 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useSchedule } from '../context/ScheduleContext';
 
+const getRoleHome = (role) => {
+  if (role === 'admin') return '/admin';
+  if (role === 'exhibitor') return '/exhibitor';
+  return '/events';
+};
+
 export default function Register() {
   const [role, setRole] = useState('attendee');
   const [form, setForm] = useState({
@@ -22,7 +28,7 @@ export default function Register() {
 
   useEffect(() => {
     clearError();
-    if (user) navigate('/', { replace: true });
+    if (user) navigate(getRoleHome(user.role), { replace: true });
   }, [clearError, user, navigate]);
 
   const setField = (key) => (e) => {
@@ -62,7 +68,7 @@ export default function Register() {
       await refresh();
       navigate('/events', { replace: true });
     } else {
-      navigate('/floor-plan', { replace: true });
+      navigate('/exhibitor', { replace: true });
     }
   };
 

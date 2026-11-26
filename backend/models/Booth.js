@@ -15,6 +15,18 @@ const boothSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  zone: {
+    type: String,
+    default: 'Hall A'
+  },
+  size: {
+    type: String,
+    default: '3m x 3m'
+  },
+  price: {
+    type: Number,
+    default: 500
+  },
   status: {
     type: String,
     enum: ['Available', 'Pending', 'Booked'],

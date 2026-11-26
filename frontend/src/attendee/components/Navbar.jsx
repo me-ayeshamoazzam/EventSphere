@@ -17,20 +17,20 @@ function getNavLinks(role) {
   }
   if (role === 'exhibitor') {
     return [
+      { to: '/exhibitor', label: 'Exhibitor Portal' },
       { to: '/events', label: 'All Expos' },
-      { to: '/floor-plan', label: 'Floor Plan' },
       { to: '/exhibitors', label: 'Exhibitors' },
-      { to: '/contact', label: 'Contact' },
+      { to: '/floor-plan', label: 'Floor Plan' },
     ];
   }
   if (role === 'admin') {
     return [
+      { to: '/admin', label: 'Admin Dashboard' },
       { to: '/events', label: 'All Expos' },
       { to: '/exhibitors', label: 'Exhibitors' },
       { to: '/floor-plan', label: 'Floor Plan' },
     ];
   }
-  // Logged-out / public
   return [
     { to: '/', label: 'Home', end: true },
     { to: '/events', label: 'All Expos' },
@@ -86,7 +86,6 @@ export default function Navbar() {
 
   const handleLogout = () => {
     logout();
-    // Clean reload clears all cached React contexts (including saved schedule state)
     window.location.assign('/');
   };
 
@@ -111,7 +110,6 @@ export default function Navbar() {
             </NavLink>
           ))}
 
-          {/* Mobile-only auth controls inside hamburger drawer */}
           <div className="es-nav__mobile-auth">
             {user ? (
               <>
@@ -135,7 +133,6 @@ export default function Navbar() {
           </div>
         </nav>
 
-        {/* Desktop auth actions */}
         <div className="es-nav__actions">
           {user ? (
             <div className="es-user" ref={menuRef}>
@@ -155,6 +152,18 @@ export default function Navbar() {
                     <span className="es-user__name">{user.name}</span>
                     <span className="es-user__role">{user.role}</span>
                   </div>
+
+                  {user.role === 'admin' && (
+                    <Link to="/admin" className="es-user__item" role="menuitem">
+                      Admin Dashboard
+                    </Link>
+                  )}
+
+                  {user.role === 'exhibitor' && (
+                    <Link to="/exhibitor" className="es-user__item" role="menuitem">
+                      Exhibitor Portal
+                    </Link>
+                  )}
 
                   {user.role === 'attendee' && (
                     <Link to="/schedule" className="es-user__item" role="menuitem">

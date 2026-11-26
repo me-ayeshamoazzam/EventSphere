@@ -1,14 +1,25 @@
 const Booth = require('../models/Booth');
 
+const formatBooth = (boothDoc) => {
+  const obj = boothDoc.toObject ? boothDoc.toObject() : boothDoc;
+  return {
+    ...obj,
+    event: obj.eventId,
+    exhibitor:
+      obj.exhibitorId && typeof obj.exhibitorId === 'object' ? obj.exhibitorId : null,
+  };
+};
+
 // @desc    Get all booths for a specific event's floor plan
 // @route   GET /api/booths/:eventId
 // @access  Public
 const getBooths = async (req, res) => {
   try {
-    // Fetches the booths and attaches the exhibitor's company details for the map markers
-    const booths = await Booth.find({ event: req.params.eventId })
-      .populate('exhibitor', 'companyName logoUrl');
-    res.status(200).json(booths);
+    const booths = await Booth.find({ eventId: req.params.eventId })
+      .populate('exhibitorId', 'name companyName logoUrl')
+      .sort({ boothNumber: 1 });
+
+    res.status(200).json(booths.map(formatBooth));
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -19,22 +30,35 @@ const getBooths = async (req, res) => {
 // @access  Private (Admin only)
 const createBooth = async (req, res) => {
   try {
-    const { event, boothNumber, price, coordinates } = req.body;
-    
+    const { eventId, event, boothNumber, zone, size, price, status, coordinates } = req.body;
+    const resolvedEventId = eventId || event;
+
+    if (!resolvedEventId || !boothNumber || !coordinates) {
+      return res
+        .status(400)
+        .json({ message: 'eventId, boothNumber, and coordinates are required' });
+    }
+
     const booth = await Booth.create({
-      event,
+      eventId: resolvedEventId,
       boothNumber,
-      price,
-      coordinates
+      zone: zone || 'Hall A',
+      size: size || '3m x 3m',
+      price: price ?? 500,
+      status: status || 'Available',
+      coordinates,
     });
 
-    res.status(201).json(booth);
+    const formatted = formatBooth(booth);
+    req.io.emit('boothUpdated', formatted);
+
+    res.status(201).json(formatted);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
-// @desc    Book a booth 
+// @desc    Book a booth
 // @route   PUT /api/booths/:id/book
 // @access  Private (Exhibitor only)
 const bookBooth = async (req, res) => {
@@ -45,19 +69,20 @@ const bookBooth = async (req, res) => {
       return res.status(404).json({ message: 'Booth not found' });
     }
 
-    if (booth.status !== 'available') {
+    if ((booth.status || '').toLowerCase() !== 'available') {
       return res.status(400).json({ message: 'This booth is already reserved' });
     }
 
-    // Update status and assign the logged-in exhibitor
-    booth.status = 'reserved';
-    booth.exhibitor = req.user._id;
+    booth.status = 'Booked';
+    booth.exhibitorId = req.user._id || req.user.id;
     await booth.save();
 
-    // Broadcast the updated booth data to all connected frontends via Socket.io
-    req.io.emit('boothUpdated', booth);
+    await booth.populate('exhibitorId', 'name companyName logoUrl');
+    const formatted = formatBooth(booth);
 
-    res.status(200).json(booth);
+    req.io.emit('boothUpdated', formatted);
+
+    res.status(200).json(formatted);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

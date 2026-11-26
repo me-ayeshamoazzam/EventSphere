@@ -3,6 +3,12 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useSchedule } from '../context/ScheduleContext';
 
+const getRoleHome = (role) => {
+  if (role === 'admin') return '/admin';
+  if (role === 'exhibitor') return '/exhibitor';
+  return '/events';
+};
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,7 +20,7 @@ export default function Login() {
 
   useEffect(() => {
     clearError();
-    if (user) navigate('/', { replace: true });
+    if (user) navigate(getRoleHome(user.role), { replace: true });
   }, [clearError, user, navigate]);
 
   const handleSubmit = async (e) => {
@@ -26,12 +32,7 @@ export default function Login() {
       await refresh();
     }
 
-    const fallback =
-      res.user?.role === 'exhibitor'
-        ? '/floor-plan'
-        : '/events';
-
-    navigate(location.state?.from || fallback, { replace: true });
+    navigate(location.state?.from || getRoleHome(res.user?.role), { replace: true });
   };
 
   return (

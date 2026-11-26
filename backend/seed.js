@@ -1,3 +1,4 @@
+const Booth = require('./models/Booth');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 require('dotenv').config();
@@ -599,7 +600,64 @@ async function seed() {
         { upsert: true, new: true }
       );
     }
+// 3. Seed 14 Floor Plan Booths per Event (aligned with Konva canvas landmarks)
+    const allEvents = await Event.find({}).select('_id title');
+    const exhibitorIds = approvedExhibitors.map((ex) => ex._id);
 
+    const boothLayout = [
+      // Row 1: Hall A (below Keynote Stage)
+      { boothNumber: 'A-101', zone: 'Hall A', size: '4m x 3m', price: 1200, status: 'Booked', exIndex: 0, coordinates: { x: 40, y: 66, width: 115, height: 84 } },
+      { boothNumber: 'A-102', zone: 'Hall A', size: '4m x 3m', price: 1200, status: 'Available', exIndex: null, coordinates: { x: 170, y: 66, width: 115, height: 84 } },
+      { boothNumber: 'A-103', zone: 'Hall A', size: '4m x 3m', price: 1200, status: 'Booked', exIndex: 1, coordinates: { x: 300, y: 66, width: 115, height: 84 } },
+      { boothNumber: 'A-104', zone: 'Hall A', size: '4m x 3m', price: 1200, status: 'Pending', exIndex: null, coordinates: { x: 430, y: 66, width: 115, height: 84 } },
+
+      // Row 2: Tech Pavilion (below Main Concourse Aisle)
+      { boothNumber: 'T-301', zone: 'Tech Pavilion', size: '3m x 3m', price: 850, status: 'Booked', exIndex: 2, coordinates: { x: 40, y: 194, width: 115, height: 84 } },
+      { boothNumber: 'T-302', zone: 'Tech Pavilion', size: '3m x 3m', price: 850, status: 'Available', exIndex: null, coordinates: { x: 170, y: 194, width: 115, height: 84 } },
+      { boothNumber: 'T-303', zone: 'Tech Pavilion', size: '3m x 3m', price: 850, status: 'Available', exIndex: null, coordinates: { x: 300, y: 194, width: 115, height: 84 } },
+      { boothNumber: 'T-304', zone: 'Tech Pavilion', size: '3m x 3m', price: 850, status: 'Booked', exIndex: 3, coordinates: { x: 430, y: 194, width: 115, height: 84 } },
+
+      // Row 3: Startup Alley (below Startup & Innovation Walkway)
+      { boothNumber: 'S-401', zone: 'Startup Alley', size: '2m x 2m', price: 450, status: 'Available', exIndex: null, coordinates: { x: 40, y: 320, width: 115, height: 84 } },
+      { boothNumber: 'S-402', zone: 'Startup Alley', size: '2m x 2m', price: 450, status: 'Booked', exIndex: 4, coordinates: { x: 170, y: 320, width: 115, height: 84 } },
+      { boothNumber: 'S-403', zone: 'Startup Alley', size: '2m x 2m', price: 450, status: 'Available', exIndex: null, coordinates: { x: 300, y: 320, width: 115, height: 84 } },
+      { boothNumber: 'S-404', zone: 'Startup Alley', size: '2m x 2m', price: 450, status: 'Pending', exIndex: null, coordinates: { x: 430, y: 320, width: 115, height: 84 } },
+
+      // Right Column: VIP Island (below North Entrance)
+      { boothNumber: 'V-201', zone: 'VIP Island', size: '6m x 4m', price: 2400, status: 'Booked', exIndex: 5, coordinates: { x: 580, y: 66, width: 150, height: 156 } },
+      { boothNumber: 'V-202', zone: 'VIP Island', size: '6m x 4m', price: 2400, status: 'Available', exIndex: null, coordinates: { x: 580, y: 246, width: 150, height: 158 } },
+    ];
+
+    let boothCount = 0;
+    for (let i = 0; i < allEvents.length; i++) {
+      const ev = allEvents[i];
+      for (const template of boothLayout) {
+        const assignedExhibitor =
+          template.status === 'Booked' && exhibitorIds.length > 0
+            ? exhibitorIds[(template.exIndex + i) % exhibitorIds.length]
+            : null;
+
+        await Booth.findOneAndUpdate(
+          { eventId: ev._id, boothNumber: template.boothNumber },
+          {
+            $set: {
+              eventId: ev._id,
+              boothNumber: template.boothNumber,
+              zone: template.zone,
+              size: template.size,
+              price: template.price,
+              status: template.status,
+              exhibitorId: assignedExhibitor,
+              coordinates: template.coordinates,
+            },
+          },
+          { upsert: true, new: true }
+        );
+        boothCount++;
+      }
+    }
+
+    console.log(`Seeded ${boothCount} booths across ${allEvents.length} events.`);
     console.log(`Seed complete! Upserted ${eventsToSeed.length} events (2 per category) and ${usersToSeed.length} users.`);
     process.exit(0);
   } catch (error) {

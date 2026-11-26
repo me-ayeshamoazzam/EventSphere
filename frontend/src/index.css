@@ -30,7 +30,11 @@
   box-sizing: border-box;
 }
 
-html,
+html {
+  margin: 0;
+  padding: 0;
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -48,7 +52,7 @@ h3,
 h4 {
   margin: 0;
   font-weight: 700;
-  color: var(--text-primary);
+  color: inherit;
   letter-spacing: -0.02em;
 }
 

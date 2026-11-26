@@ -72,11 +72,12 @@ export const useAuthStore = create((set) => ({
     if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
     set({ user });
   },
-
-  logout: () => {
+logout: () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     localStorage.removeItem(SAVED_SESSIONS_KEY);
     set({ user: null, token: null, error: null });
   },
 }));
+
+export default useAuthStore;

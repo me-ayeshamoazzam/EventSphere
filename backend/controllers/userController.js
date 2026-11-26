@@ -1,15 +1,32 @@
 const User = require('../models/User');
 
-// @desc    Update user profile (Exhibitor/Attendee)
-// @route   PUT /api/users/profile
-const updateProfile = async (req, res) => {
+// @desc    Get logged-in user's profile
+// @route   GET /api/users/profile
+// @access  Private
+const getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id || req.user.id).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    user.companyName = req.body.companyName || user.companyName;
-    user.companyDescription = req.body.companyDescription || user.companyDescription;
-    user.logoUrl = req.body.logoUrl || user.logoUrl;
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+// @desc    Update user profile (Exhibitor/Attendee)
+// @route   PUT /api/users/profile
+// @access  Private
+const updateProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id || req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (req.body.companyName !== undefined) user.companyName = req.body.companyName;
+    if (req.body.companyDescription !== undefined) {
+      user.companyDescription = req.body.companyDescription;
+    }
+    if (req.body.logoUrl !== undefined) user.logoUrl = req.body.logoUrl;
 
     const updatedUser = await user.save();
     const { password, ...safeUser } = updatedUser.toObject();
@@ -68,7 +85,7 @@ const approveExhibitor = async (req, res) => {
 // @access  Attendee only
 const getBookmarks = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('bookmarks');
+    const user = await User.findById(req.user._id || req.user.id).select('bookmarks');
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     res.json(user.bookmarks || []);
@@ -82,7 +99,7 @@ const getBookmarks = async (req, res) => {
 // @access  Attendee only
 const toggleBookmark = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id || req.user.id);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const { sessionId } = req.params;
@@ -102,10 +119,11 @@ const toggleBookmark = async (req, res) => {
 };
 
 module.exports = {
+  getProfile,
   updateProfile,
   getExhibitors,
   getPendingExhibitors,
   approveExhibitor,
   getBookmarks,
-  toggleBookmark
+  toggleBookmark,
 };

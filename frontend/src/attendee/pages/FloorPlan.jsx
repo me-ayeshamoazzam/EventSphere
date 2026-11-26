@@ -1,67 +1,295 @@
-import { useState } from 'react';
-import { getFloorPlan, getExhibitors } from '../services/attendeeService';
-import useResource from '../hooks/useResource';
-import { Loading, ErrorState, DemoNotice } from '../components/States';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { io } from 'socket.io-client';
+import api from '../../api/axiosInstance';
+import FloorPlanMap from '../../components/FloorPlanMap';
+import useAuthStore from '../../store/authStore';
+
+const isBoothAvailable = (status) => {
+  const normalized = (status || '').toLowerCase();
+  return normalized === 'available' || normalized === '';
+};
 
 export default function FloorPlan() {
-  const plan = useResource(getFloorPlan);
-  const xs = useResource(getExhibitors);
-  const [hallId, setHallId] = useState('');
-  const [boothId, setBoothId] = useState('');
+  const user = useAuthStore((state) => state.user);
 
-  const halls = plan.data?.halls || [];
-  const hall = halls.find((h) => h.id === hallId) || halls[0];
-  const exhibitor = (id) => (xs.data || []).find((x) => x.id === id);
-  const booth = hall?.booths.find((b) => b.id === boothId);
-  const bx = booth && exhibitor(booth.exhibitorId);
+  const [events, setEvents] = useState([]);
+  const [selectedEventId, setSelectedEventId] = useState('');
+  const [booths, setBooths] = useState([]);
+  const [selectedBooth, setSelectedBooth] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [booking, setBooking] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const loadEvents = async () => {
+      try {
+        const { data } = await api.get('/api/events');
+        if (!active) return;
+        const list = Array.isArray(data) ? data : data?.events || data?.data || [];
+        setEvents(list);
+        if (list.length > 0) {
+          setSelectedEventId(list[0]._id);
+        }
+      } catch {
+        if (active) setErrorMessage('Could not load events for the floor plan.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadEvents();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedEventId) return;
+    let active = true;
+    setErrorMessage('');
+    setStatusMessage('');
+
+    const loadBooths = async () => {
+      try {
+        const { data } = await api.get(`/api/booths/${selectedEventId}`);
+        if (!active) return;
+        setBooths(Array.isArray(data) ? data : []);
+        setSelectedBooth(null);
+      } catch {
+        if (active) {
+          setBooths([]);
+          setErrorMessage('Failed to load floor booths for this event.');
+        }
+      }
+    };
+
+    loadBooths();
+    return () => {
+      active = false;
+    };
+  }, [selectedEventId]);
+
+  useEffect(() => {
+    const socketUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const socket = io(socketUrl);
+
+    socket.on('connect', () => setSocketConnected(true));
+    socket.on('disconnect', () => setSocketConnected(false));
+
+    socket.on('boothUpdated', (updatedBooth) => {
+      setBooths((prev) =>
+        prev.map((b) => (b._id === updatedBooth._id ? { ...b, ...updatedBooth } : b))
+      );
+      setSelectedBooth((prev) =>
+        prev && prev._id === updatedBooth._id ? { ...prev, ...updatedBooth } : prev
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  const activeEvent = useMemo(
+    () => events.find((ev) => ev._id === selectedEventId) || null,
+    [events, selectedEventId]
+  );
+
+  const handleBookBooth = async () => {
+    if (!selectedBooth) return;
+    setStatusMessage('');
+    setErrorMessage('');
+    setBooking(true);
+    try {
+      const { data } = await api.put(`/api/booths/${selectedBooth._id}/book`);
+      setBooths((prev) => prev.map((b) => (b._id === data._id ? data : b)));
+      setSelectedBooth(data);
+      setStatusMessage(`Booth ${data.boothNumber} reserved for your company.`);
+    } catch (err) {
+      setErrorMessage(
+        err.response?.data?.message || err.response?.data?.error || 'Failed to book booth.'
+      );
+    } finally {
+      setBooking(false);
+    }
+  };
+
+  const exhibitorName =
+    selectedBooth?.exhibitor?.companyName || selectedBooth?.exhibitorId?.companyName || '';
 
   return (
-    <main className="es-page">
-      <header className="es-pagehead">
-        <div className="es-wrap"><h1>Floor plan</h1><p>Select a booth to see who is exhibiting there.</p></div>
-      </header>
-      <div className="es-wrap">
-        {plan.loading ? <Loading label="Loading floor plan" /> : plan.error ? <ErrorState message={plan.error} onRetry={plan.retry} /> : !hall ? (
-          <ErrorState message="No floor plan is available yet." />
-        ) : (
-          <>
-            <div className="es-tabs" role="tablist" aria-label="Hall">
-              {halls.map((h) => (
-                <button key={h.id} role="tab" aria-selected={h.id === hall.id} className={h.id === hall.id ? 'is-active' : ''} onClick={() => { setHallId(h.id); setBoothId(''); }}>{h.name}</button>
+    <main style={{ background: '#f4f4f5', minHeight: '80vh' }}>
+      <section
+        style={{
+          background: '#0a0a0b',
+          color: '#ffffff',
+          padding: '104px 24px 40px',
+          borderBottom: '1px solid #27272a',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 1280,
+            margin: '0 auto',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            gap: 20,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <h1 style={{ fontSize: 'clamp(2rem, 4vw, 2.75rem)', color: '#ffffff', marginBottom: 8 }}>
+              Live Floor Plan
+            </h1>
+            <p style={{ color: '#a1a1aa', fontSize: 15 }}>
+              Select an expo and click any booth to inspect exhibitors or live availability.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <label htmlFor="fp-event-select" style={{ fontSize: 13, color: '#a1a1aa' }}>
+              Expo:
+            </label>
+            <select
+              id="fp-event-select"
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+              disabled={loading || events.length === 0}
+              style={{
+                padding: '9px 12px',
+                borderRadius: 6,
+                border: '1px solid #27272a',
+                background: '#141417',
+                color: '#ffffff',
+                fontSize: 13.5,
+                minWidth: 260,
+              }}
+            >
+              {events.map((ev) => (
+                <option key={ev._id} value={ev._id}>
+                  {ev.title}
+                </option>
               ))}
-            </div>
-            <div className="es-plan">
-              <div className="es-plan__map">
-                <svg viewBox="0 0 780 460" role="img" aria-label={`Floor plan of ${hall.name}`}>
-                  <rect x="2" y="2" width="776" height="456" fill="none" stroke="currentColor" strokeOpacity=".25" strokeWidth="2" />
-                  {(plan.data.landmarks || []).map((l) => (
-                    <g key={l.label}><rect x={l.x} y={l.y} width={l.w} height={l.h} className="es-plan__land" />
-                      <text x={l.x + l.w / 2} y={l.y + l.h / 2 + 5} textAnchor="middle" className="es-plan__lbl">{l.label}</text></g>
-                  ))}
-                  {hall.booths.map((b) => {
-                    const taken = !!b.exhibitorId;
-                    return (
-                      <g key={b.id} tabIndex={0} role="button" aria-label={`Booth ${b.id}${taken ? `, ${exhibitor(b.exhibitorId)?.name || 'exhibitor'}` : ', available'}`}
-                        className={`es-plan__booth ${taken ? 'is-taken' : ''} ${b.id === boothId ? 'is-sel' : ''}`}
-                        onClick={() => setBoothId(b.id)} onKeyDown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && setBoothId(b.id)}>
-                        <rect x={b.x} y={b.y} width={b.w} height={b.h} />
-                        <text x={b.x + b.w / 2} y={b.y + b.h / 2 + 5} textAnchor="middle">{b.id}</text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
-              <aside className="es-plan__info" aria-live="polite">
-                {!booth ? <p>Choose a booth on the map.</p> : bx ? (
-                  <><small>Booth {booth.id}</small><h3>{bx.name}</h3><span className="es-tag es-tag--line">{bx.industry}</span><p>{bx.description}</p></>
-                ) : (
-                  <><small>Booth {booth.id}</small><h3>Not assigned</h3><p>No exhibitor is listed for this booth.</p></>
-                )}
-              </aside>
-            </div>
-          </>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '28px 24px 56px' }}>
+        {statusMessage && (
+          <div className="banner-alert banner-success" style={{ marginBottom: 16 }}>
+            <span>{statusMessage}</span>
+          </div>
         )}
-        <DemoNotice source={plan.source} />
+        {errorMessage && (
+          <div className="banner-alert banner-error" style={{ marginBottom: 16 }}>
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        <div className="grid-12">
+          <section className="panel col-span-8">
+            <div className="panel-header">
+              <div>
+                <h2 className="panel-title">{activeEvent?.title || 'Exhibition Hall'}</h2>
+                <p className="panel-caption">
+                  {activeEvent?.location || 'Drag to pan, use controls to zoom, or filter by zone.'}
+                </p>
+              </div>
+            </div>
+
+            <FloorPlanMap
+              booths={booths}
+              selectedBooth={selectedBooth}
+              onSelectBooth={setSelectedBooth}
+              socketConnected={socketConnected}
+            />
+          </section>
+
+          <aside className="col-span-4" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <section className="panel-dark">
+              <div className="panel-header">
+                <h2 className="panel-title">
+                  {selectedBooth ? `Booth ${selectedBooth.boothNumber}` : 'Booth Details'}
+                </h2>
+                {selectedBooth?.price != null && (
+                  <span className="mono" style={{ fontSize: 18, fontWeight: 700, color: '#f97316' }}>
+                    ${Number(selectedBooth.price).toLocaleString()}
+                  </span>
+                )}
+              </div>
+
+              {selectedBooth ? (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13.5 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#a1a1aa' }}>Zone</span>
+                      <strong>{selectedBooth.zone || 'Main Hall'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#a1a1aa' }}>Dimensions</span>
+                      <strong>{selectedBooth.size || 'Standard'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#a1a1aa' }}>Status</span>
+                      <strong
+                        style={{
+                          color: isBoothAvailable(selectedBooth.status) ? '#f97316' : '#e4e4e7',
+                        }}
+                      >
+                        {selectedBooth.status || 'Available'}
+                      </strong>
+                    </div>
+                    {exhibitorName && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#a1a1aa' }}>Exhibitor</span>
+                        <strong>{exhibitorName}</strong>
+                      </div>
+                    )}
+                  </div>
+
+                  {user?.role === 'exhibitor' && (
+                    <button
+                      type="button"
+                      className="btn btn-orange"
+                      disabled={booking || !isBoothAvailable(selectedBooth.status)}
+                      onClick={handleBookBooth}
+                    >
+                      {booking
+                        ? 'Reserving Booth...'
+                        : isBoothAvailable(selectedBooth.status)
+                        ? 'Book Selected Booth'
+                        : 'Already Reserved'}
+                    </button>
+                  )}
+
+                  {user?.role === 'admin' && (
+                    <Link to="/admin" className="btn btn-orange" style={{ textDecoration: 'none' }}>
+                      Manage in Admin Dashboard
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <p className="panel-caption">
+                  Click any booth on the map to view its zone, dimensions, live status, and exhibiting company.
+                </p>
+              )}
+            </section>
+
+            {booths.length === 0 && !loading && (
+              <section className="panel">
+                <h3 className="panel-title">No Booths Configured Yet</h3>
+                <p className="panel-caption">
+                  This event does not have floor booths added in MongoDB yet. Create booths from the Admin Dashboard or seed sample booths into the database.
+                </p>
+              </section>
+            )}
+          </aside>
+        </div>
       </div>
     </main>
   );

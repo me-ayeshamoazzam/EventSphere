@@ -68,7 +68,7 @@ export function OccupancyBarLineChart({ booths = [], events = [] }) {
     <div className="chart-container">
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        style={{ width: '100%', height: 'auto', display: 'block' }}
+        style={{ width: '100%', maxWidth: 680, height: 'auto', display: 'block' }}
         role="img"
         aria-label="Zone booth occupancy and revenue chart"
       >
@@ -334,6 +334,17 @@ export function BoothAllocationDonut({ booths = [] }) {
   );
 }
 
+const truncateLabel = (text, maxChars) => {
+  if (!text) return '';
+  return text.length > maxChars ? `${text.slice(0, maxChars - 1).trimEnd()}…` : text;
+};
+
+const formatHourLabel = (decimalHour) => {
+  const hrs = Math.floor(decimalHour);
+  const mins = Math.round((decimalHour - hrs) * 60);
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+};
+
 export function SessionTimelineGraph({ schedule = [] }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
 
@@ -354,24 +365,40 @@ export function SessionTimelineGraph({ schedule = [] }) {
         : startHour + 1;
     return {
       ...s,
-      startHour: Math.max(7, Math.min(20, startHour)),
-      endHour: Math.max(7.5, Math.min(21, endHour)),
+      startHour: Math.max(8, Math.min(18.5, startHour)),
+      endHour: Math.max(8.5, Math.min(19, endHour)),
     };
   });
 
   const minH = 8;
   const maxH = 19;
-  const width = 560;
-  const rowH = 34;
-  const padTop = 26;
-  const padLeft = 140;
-  const padRight = 18;
+  const width = 620;
+  const rowH = 38;
+  const padTop = 28;
+  const padLeft = 175;
+  const padRight = 24;
   const plotW = width - padLeft - padRight;
   const height = padTop + parsed.length * rowH + 16;
+
+  const activeSession = hoveredIdx !== null ? parsed[hoveredIdx] : null;
 
   return (
     <div className="chart-container">
       <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        <defs>
+          {parsed.map((item, idx) => {
+            const x1 = padLeft + ((item.startHour - minH) / (maxH - minH)) * plotW;
+            const x2 = padLeft + ((item.endHour - minH) / (maxH - minH)) * plotW;
+            const barW = Math.max(24, x2 - x1);
+            const y = padTop + idx * rowH + 5;
+            return (
+              <clipPath key={`clip-${item._id || idx}`} id={`timeline-bar-clip-${idx}`}>
+                <rect x={x1} y={y} width={barW} height={24} rx="4" />
+              </clipPath>
+            );
+          })}
+        </defs>
+
         {[8, 10, 12, 14, 16, 18].map((hr) => {
           const x = padLeft + ((hr - minH) / (maxH - minH)) * plotW;
           return (
@@ -392,11 +419,15 @@ export function SessionTimelineGraph({ schedule = [] }) {
         })}
 
         {parsed.map((item, idx) => {
-          const y = padTop + idx * rowH + 4;
+          const y = padTop + idx * rowH + 5;
           const x1 = padLeft + ((item.startHour - minH) / (maxH - minH)) * plotW;
           const x2 = padLeft + ((item.endHour - minH) / (maxH - minH)) * plotW;
-          const barW = Math.max(22, x2 - x1);
+          const barW = Math.max(24, x2 - x1);
           const isKeynote = (item.sessionTitle || '').toLowerCase().includes('keynote') || idx === 0;
+          const barLabel = item.speakerName || item.locationDetails || 'Scheduled';
+          const fitsInside = barLabel.length * 6.4 + 16 <= barW;
+          const rightSpace = width - padRight - (x1 + barW + 8);
+          const maxOutsideChars = Math.max(10, Math.floor(rightSpace / 6.4));
 
           return (
             <g
@@ -405,37 +436,74 @@ export function SessionTimelineGraph({ schedule = [] }) {
               onMouseLeave={() => setHoveredIdx(null)}
               style={{ cursor: 'pointer' }}
             >
+              <rect
+                x={0}
+                y={y - 4}
+                width={width}
+                height={rowH - 4}
+                rx="4"
+                fill={hoveredIdx === idx ? 'rgba(249, 115, 22, 0.05)' : 'transparent'}
+              />
+
               <text
-                x={padLeft - 10}
-                y={y + 15}
+                x={padLeft - 12}
+                y={y + 15.5}
                 textAnchor="end"
                 fontSize="11.5"
                 fontWeight="600"
                 fill="#09090b"
               >
-                {(item.sessionTitle || `Session ${idx + 1}`).slice(0, 18)}
+                {truncateLabel(item.sessionTitle || `Session ${idx + 1}`, 24)}
               </text>
+
               <rect
                 x={x1}
                 y={y}
                 width={barW}
-                height={22}
+                height={24}
                 rx="4"
                 fill={isKeynote ? '#f97316' : hoveredIdx === idx ? '#3f3f46' : '#18181b'}
               />
-              <text
-                x={x1 + 8}
-                y={y + 14.5}
-                fontSize="10.5"
-                fontWeight="600"
-                fill="#ffffff"
-              >
-                {item.speakerName || item.locationDetails || 'Scheduled'}
-              </text>
+
+              {fitsInside ? (
+                <text
+                  x={x1 + 8}
+                  y={y + 15.5}
+                  fontSize="10.5"
+                  fontWeight="600"
+                  fill="#ffffff"
+                  clipPath={`url(#timeline-bar-clip-${idx})`}
+                >
+                  {barLabel}
+                </text>
+              ) : (
+                <text
+                  x={x1 + barW + 8}
+                  y={y + 15.5}
+                  fontSize="10.5"
+                  fontWeight="600"
+                  fill="#52525b"
+                >
+                  {truncateLabel(barLabel, maxOutsideChars)}
+                </text>
+              )}
             </g>
           );
         })}
       </svg>
+
+      {activeSession && (
+        <div className="chart-tooltip">
+          <strong>{activeSession.sessionTitle || 'Scheduled Session'}</strong>
+          <span>
+            {activeSession.speakerName || 'Speaker TBA'}
+            {activeSession.locationDetails ? ` · ${activeSession.locationDetails}` : ''}
+          </span>
+          <span className="mono" style={{ color: '#f97316' }}>
+            {formatHourLabel(activeSession.startHour)} – {formatHourLabel(activeSession.endHour)}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
